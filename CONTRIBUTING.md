@@ -20,8 +20,6 @@ Result: Lambda exists but can't be invoked by its triggers → silent failures.
 cd ./terraform
 
 # Set state backend auth (add to ~/.zshrc for persistence)
-export TF_HTTP_USERNAME=session
-export TF_HTTP_PASSWORD="<stategraph-api-key>"
 
 # Deploy
 AWS_PROFILE=<YOUR_PROFILE> terraform plan     # always review first
@@ -66,12 +64,9 @@ AWS_PROFILE=<YOUR_PROFILE> ...      # all AWS commands use this profile
 
 ```bash
 git add -A && git commit -m "description"   # commit after every logical change
-# State is in Stategraph — no .tfstate in git
 ```
 
 ## Infrastructure layout
 
 ```
-./    ← main project (uses Stategraph backend)
-../stategraph/       ← Stategraph infra (separate, local state)
 ```

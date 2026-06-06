@@ -59,7 +59,6 @@ is a planned tier (§5), surfaced as a separate, clearly-labeled column when bui
 | NFW rules | 98 custom (app detection + P2P/evasion blocking) + 9 AWS managed threat groups |
 | 3rd-party slot (GWLB) | endpoint service `<GWLB_ENDPOINT_SERVICE>` (no appliance yet) |
 | Device ingress | AWS Client VPN `<VPN_ENDPOINT_ID>` (full tunnel) · profile `trafinspector.ovpn` + CA `trafinspector-ca.crt` |
-| Terraform state backend | Stategraph (self-hosted) `<STATEGRAPH_URL>` |
 | SNS alerts | `trafinspector-alerts` — email on blocked/threat traffic |
 | Run rate | **~$2.0/hr** (+~$0.05/hr per connected VPN client); tear down with `terraform destroy` |
 
@@ -240,34 +239,15 @@ sudo cp trafinspector-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca
 
 Connect with any OpenVPN-compatible client (Tunnelblick, OpenVPN Connect, etc.).
 
-### Step 3 — (Optional) Stategraph state backend
-
-To use Stategraph instead of local state:
-
-```bash
-# Deploy Stategraph (separate directory)
-cd ../stategraph
-terraform init && terraform apply
-
-# Migrate state
-export TF_HTTP_USERNAME=session
-export TF_HTTP_PASSWORD="<stategraph-api-key>"
-cd ../terraform
-# Add backend "http" block to versions.tf, then:
-terraform init -migrate-state
-```
-
-### Step 4 — Set environment variables
+### Step 3 — Set environment variables
 
 ```bash
 # Add to ~/.zshrc
 export AWS_PROFILE=<YOUR_PROFILE>
-export TF_HTTP_USERNAME=session                  # if using Stategraph
-export TF_HTTP_PASSWORD="<stategraph-api-key>"   # if using Stategraph
 export TAXONOMY_API="<API_GATEWAY_URL>/admin"    # for taxonomy.sh CLI
 ```
 
-### Step 5 — Verify
+### Step 4 — Verify
 
 ```bash
 # Connect to VPN, then:
@@ -278,7 +258,7 @@ export TAXONOMY_API="<API_GATEWAY_URL>/admin"    # for taxonomy.sh CLI
 terraform output ui_url  # CloudFront URL
 ```
 
-### Step 6 — Manage taxonomy
+### Step 5 — Manage taxonomy
 
 ```bash
 ./taxonomy.sh list                          # view pending AI classifications

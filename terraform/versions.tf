@@ -1,9 +1,8 @@
 terraform {
   required_version = ">= 1.5"
 
-  backend "http" {
-    address = "https://d11tj92p3kkm7v.cloudfront.net/api/v1/states/backend/c7f039f8-11e6-442e-85cf-05c8b9cab5bf"
-  }
+  # Backend: local by default. For remote state, configure S3 or HTTP backend.
+  # backend "s3" { bucket = "..." key = "trafinspector/terraform.tfstate" region = "us-east-2" }
 
   required_providers {
     aws = {
