@@ -1,0 +1,59 @@
+<!doctype html>
+<html><head><meta charset=utf-8><title>TrafInspector — per-connection visibility</title>
+<style>
+body{font:13px sans-serif;margin:12px}
+table{border-collapse:collapse}
+th,td{border:1px solid #ccc;padding:3px 6px;white-space:nowrap}
+th{background:#eee;position:sticky;top:0}
+.t5{background:#fde68a}        /* 5-tuple = connection identity */
+.nfw{background:#eaf2ff}       /* source: AWS Network Firewall */
+.flow{background:#e8f7ee}      /* source: VPC Flow Logs */
+select,button{font-size:14px;padding:3px;margin:0 6px}
+#wrap{overflow:auto;max-height:80vh;margin-top:8px}
+</style></head>
+<body>
+<h2>Per-connection visibility — raw fields from source</h2>
+<label>Time range
+  <select id=range>
+    <option>5m</option><option selected>15m</option><option>1h</option>
+    <option>6h</option><option>24h</option><option>7d</option><option>30d</option>
+  </select></label>
+<label>Source
+  <select id=src><option value="">All</option><option>NFW</option><option>FlowLogs</option></select></label>
+<button onclick=load()>Refresh</button>
+<span id=meta></span>
+<p style="font:12px sans-serif;color:#555">
+  <span class=t5 style="padding:1px 5px">amber</span> = 5-tuple (connection identity) ·
+  <span class=nfw style="padding:1px 5px">blue</span> = AWS Network Firewall ·
+  <span class=flow style="padding:1px 5px">green</span> = VPC Flow Logs.
+  Every column is a raw field straight from its source (no derived/synthesized values).</p>
+<div id=wrap></div>
+<script>
+const API="${query_url}";
+const FIVE=new Set(["src_ip","dst_ip","src_port","dst_port","proto","srcaddr","dstaddr","srcport","dstport","protocol"]);
+const HIDE=new Set(["conn_id","gsipk","ttl"]);
+const FIRST=["source","ts"];
+async function load(){
+  const r=document.getElementById('range').value, s=document.getElementById('src').value;
+  document.getElementById('meta').textContent=' loading…';
+  const d=await (await fetch(API+"?range="+r+"&source="+s)).json();
+  const items=d.items||[];
+  const cols=new Set(FIRST);
+  items.forEach(i=>Object.keys(i).forEach(k=>{if(!HIDE.has(k))cols.add(k)}));
+  const C=[...FIRST, ...[...cols].filter(c=>!FIRST.includes(c)).sort()];
+  let h='<table><tr>'+C.map(c=>`<th class="${FIVE.has(c)?'t5':''}">${c}</th>`).join('')+'</tr>';
+  items.forEach(i=>{
+    const cls=i.source==='NFW'?'nfw':'flow';
+    h+='<tr>'+C.map(c=>{
+      let v=i[c]; if(v===undefined||v==='')v='-';
+      if(c==='ts'&&v!=='-')v=new Date(v*1000).toISOString().replace('T',' ').substr(0,19);
+      return `<td class="${FIVE.has(c)?'t5':cls}">${(''+v).replace(/</g,'&lt;')}</td>`;
+    }).join('')+'</tr>';
+  });
+  document.getElementById('wrap').innerHTML=h+'</table>';
+  document.getElementById('meta').textContent=' '+(d.count||0)+' connections';
+}
+document.getElementById('range').onchange=load;
+document.getElementById('src').onchange=load;
+load();
+</script></body></html>

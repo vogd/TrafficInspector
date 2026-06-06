@@ -1,0 +1,102 @@
+<!doctype html>
+<html><head><meta charset=utf-8><title>TrafInspector — Taxonomy Admin</title>
+<style>
+body{font:14px sans-serif;margin:20px;max-width:1000px}
+h2{margin-bottom:5px}
+table{border-collapse:collapse;width:100%}
+th,td{border:1px solid #ddd;padding:8px;text-align:left}
+th{background:#f5f5f5;position:sticky;top:0}
+.pending{background:#fff3e0}
+.approved{background:#e8f5e9}
+.rejected{background:#fbe9e7}
+button{padding:4px 12px;margin:2px;cursor:pointer;border:1px solid #ccc;border-radius:3px}
+.btn-approve{background:#c8e6c9;border-color:#66bb6a}
+.btn-reject{background:#ffcdd2;border-color:#ef5350}
+.btn-rename{background:#e3f2fd;border-color:#42a5f5}
+input{padding:4px;width:150px}
+.stats{background:#f5f5f5;padding:10px;border-radius:4px;margin:10px 0}
+#msg{padding:8px;margin:10px 0;display:none;border-radius:4px}
+.success{background:#c8e6c9;display:block!important}
+.error{background:#ffcdd2;display:block!important}
+</style></head>
+<body>
+<h2>🏷️ Taxonomy Admin — Pending Classifications</h2>
+<p>Review AI-suggested app names. Approve to make deterministic (cached forever), reject to ignore, rename to fix.</p>
+<div id=msg></div>
+<div class=stats id=stats></div>
+<table><thead><tr>
+  <th>Suggested App</th><th>Category</th><th>SNI / Dest</th><th>Times Seen</th><th>Confidence</th><th>Reason</th><th>Actions</th>
+</tr></thead><tbody id=tbody></tbody></table>
+
+<h3 style="margin-top:30px">📋 Current Taxonomy (<span id=taxcount>0</span> apps)</h3>
+<table><thead><tr><th>Canonical Name</th><th>Category</th><th>Patterns</th></tr></thead>
+<tbody id=taxtbody></tbody></table>
+
+<script src="config.js"></script>
+<script>
+const API=window.ADMIN_API || (window.API ? window.API.replace(/\/$/, '') + '/admin' : '/admin');
+
+async function load(){
+  const resp=await fetch(API+'?action=pending');
+  const d=await resp.json();
+  const items=d.pending||[];
+  const taxonomy=d.taxonomy||{};
+  
+  document.getElementById('stats').innerHTML=
+    `<b>${items.length}</b> pending · <b>${Object.keys(taxonomy).length}</b> approved in taxonomy`;
+  document.getElementById('taxcount').textContent=Object.keys(taxonomy).length;
+
+  let h='';
+  items.forEach((i,idx)=>{
+    h+=`<tr class="pending">
+      <td><b>${i.app}</b></td>
+      <td>${i.category}</td>
+      <td><code>${i.dest_key}</code></td>
+      <td>${i.seen_count||1}</td>
+      <td>${i.confidence}</td>
+      <td>${i.reason||''}</td>
+      <td>
+        <button class=btn-approve data-idx="${idx}">✓ Approve</button>
+        <button class=btn-reject data-idx="${idx}">✗ Reject</button>
+        <br><input id="rename_${idx}" placeholder="rename to...">
+        <button class=btn-rename data-idx="${idx}">Rename</button>
+      </td></tr>`;
+  });
+  document.getElementById('tbody').innerHTML=h||'<tr><td colspan=7>No pending items 🎉</td></tr>';
+  // Attach event listeners
+  document.querySelectorAll('.btn-approve').forEach(b=>b.onclick=()=>{const i=items[b.dataset.idx];approve(i.dest_key,i.app,i.category);});
+  document.querySelectorAll('.btn-reject').forEach(b=>b.onclick=()=>{const i=items[b.dataset.idx];reject(i.dest_key);});
+  document.querySelectorAll('.btn-rename').forEach(b=>b.onclick=()=>{const i=items[b.dataset.idx];const n=document.getElementById('rename_'+b.dataset.idx).value.trim();if(!n){alert('Enter a name');return;}approve(i.dest_key,n,i.category);});
+
+  let th='';
+  Object.entries(taxonomy).sort().forEach(([name,v])=>{
+    th+=`<tr class="approved"><td>${name}</td><td>${v.category}</td><td><code>${(v.patterns||[]).join(', ')}</code></td></tr>`;
+  });
+  document.getElementById('taxtbody').innerHTML=th;
+}
+
+async function approve(key,app,category){
+  await act('approve',{dest_key:key,app:app,category:category});
+}
+async function reject(key){
+  await act('reject',{dest_key:key});
+}
+async function rename(key,category){
+  const newName=document.getElementById('rename_'+key).value.trim();
+  if(!newName){alert('Enter a name');return;}
+  await act('approve',{dest_key:key,app:newName,category:category});
+}
+
+async function act(action,payload){
+  const msg=document.getElementById('msg');
+  try{
+    const r=await fetch(API+'?action='+action,{method:'POST',body:JSON.stringify(payload),headers:{'Content-Type':'application/json'}});
+    const d=await r.json();
+    msg.textContent=d.message||'Done';msg.className='success';
+    setTimeout(load,500);
+  }catch(e){msg.textContent='Error: '+e;msg.className='error';}
+  setTimeout(()=>{msg.style.display='none';msg.className='';},3000);
+}
+
+load();
+</script></body></html>

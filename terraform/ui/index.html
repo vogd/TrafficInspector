@@ -1,0 +1,103 @@
+<!doctype html>
+<html><head><meta charset=utf-8><title>TrafInspector — per-connection visibility</title>
+<style>
+body{font:13px sans-serif;margin:12px}
+table{border-collapse:collapse}
+th,td{border:1px solid #ccc;padding:3px 6px;white-space:nowrap}
+th{background:#eee;position:sticky;top:0}
+.t5{background:#fde68a}
+.nfw{background:#eaf2ff}
+.flow{background:#e8f7ee}
+.threat td{background:#fee2e2 !important;border-color:#fca5a5}
+.threat .t5{background:#fecaca !important}
+.detected td{background:#fff3e0 !important;border-color:#ffcc80}
+.detected .t5{background:#ffe0b2 !important}
+.ai td{background:#fce4ec !important;border-color:#f48fb1}
+.ai .t5{background:#f8bbd0 !important}
+.ai-col{background:#e8d5f5}
+select,button{font-size:14px;padding:3px;margin:0 6px}
+#wrap{overflow:auto;max-height:80vh;margin-top:8px}
+</style></head>
+<body>
+<h2>Per-connection visibility — raw fields from source</h2>
+<a href="admin.html" style="float:right;font-size:13px">🏷️ Taxonomy Admin</a>
+<label>Time range
+  <select id=range>
+    <option>5m</option><option selected>15m</option><option>1h</option>
+    <option>6h</option><option>24h</option><option>7d</option>
+  </select></label>
+<label>Source
+  <select id=src><option value="">All</option><option>NFW</option><option>FlowLogs</option></select></label>
+<label>Filter
+  <select id=flt><option value="">All traffic</option><option value="detected">Detected (NFW rules) 🟠</option><option value="threats">Blocked (threats) 🔴</option><option value="ai">AI classified 🟣</option><option value="unclassified">Unclassified ⚪</option></select></label>
+<button onclick=load()>Refresh</button>
+<span id=meta></span>
+<button id=loadmore onclick=loadMore() style="display:none">Load more ▼</button>
+<p style="font:12px sans-serif;color:#555">
+  <span class=t5 style="padding:1px 5px">amber</span> = 5-tuple (connection identity) ·
+  <span class=nfw style="padding:1px 5px">blue</span> = AWS Network Firewall (nfw_) ·
+  <span class=flow style="padding:1px 5px">green</span> = VPC Flow Logs (vfl_) ·
+  <span class=ai-col style="padding:1px 5px">purple</span> = AI classified (ai_).
+  Column prefixes: <code>nfw_</code> = Network Firewall, <code>vfl_</code> = VPC Flow Logs, <code>ai_</code> = Bedrock classification.</p>
+<div id=wrap></div>
+<script src="config.js"></script>
+<script>
+const FIVE=new Set(["src_ip","dst_ip","src_port","dst_port","proto","srcaddr","dstaddr","srcport","dstport","protocol"]);
+const AI_COLS=new Set(["ai_app","ai_confidence","ai_category","ai_reason"]);
+const HIDE=new Set(["conn_id","gsipk","ttl"]);
+const FIRST=["source","ts"];
+
+// Prefix mapping: field → display name with source prefix
+function displayCol(c){
+  if(AI_COLS.has(c)) return c; // already prefixed
+  if(c==='source'||c==='ts'||c==='threat') return c;
+  if(FIVE.has(c)) return c;
+  // NFW fields
+  if(c.startsWith('alert.')||c.startsWith('tls.')||c.startsWith('http.')||c.startsWith('netflow.')||c.startsWith('tcp.'))
+    return 'nfw_'+c;
+  if(c==='app_proto'||c==='flow_id'||c==='direction'||c==='event_type'||c==='pkt_src'||c==='verdict.action'||c==='sni'||c==='timestamp'||c.startsWith('tls_'))
+    return 'nfw_'+c;
+  // Flow Log fields
+  if(c==='bytes'||c==='packets'||c==='action'||c==='flow-direction'||c==='start'||c==='end'||c==='pkt-srcaddr'||c==='pkt-dstaddr'||c==='tcp-flags'||c==='type'||c==='vpc-id'||c==='subnet-id'||c==='interface-id'||c==='log-status'||c==='traffic-path'||c==='pkt-dst-aws-service'||c==='pkt-src-aws-service')
+    return 'vfl_'+c;
+  return c;
+}
+let currentOffset=0, allItems=[];
+async function load(){
+  currentOffset=0; allItems=[];
+  await fetchPage(0);
+}
+async function loadMore(){
+  await fetchPage(currentOffset);
+}
+async function fetchPage(offset){
+  const r=document.getElementById('range').value, s=document.getElementById('src').value;
+  if(offset===0) document.getElementById('meta').textContent=' loading…';
+  const flt=document.getElementById('flt').value;
+  const d=await (await fetch(window.API+"?range="+r+"&source="+s+"&offset="+offset+"&filter="+flt)).json();
+  let items=d.items||[];
+  allItems=offset===0?items:allItems.concat(items);
+  currentOffset=offset+items.length;
+  document.getElementById('loadmore').style.display=d.has_more?'inline':'none';
+  let filtered=allItems.slice();
+  const cols=new Set(FIRST);
+  filtered.forEach(i=>Object.keys(i).forEach(k=>{if(!HIDE.has(k))cols.add(k)}));
+  const C=[...FIRST, ...[...cols].filter(c=>!FIRST.includes(c)).sort()];
+  let h='<table><tr>'+C.map(c=>'<th class="'+(FIVE.has(c)?'t5':AI_COLS.has(c)?'ai-col':'')+'">'+displayCol(c)+'</th>').join('')+'</tr>';
+  filtered.forEach(i=>{
+    const cls=i.source==='NFW'?'nfw':'flow';
+    const rowcls=i.threat==='true'||i['alert.action']==='blocked'?'threat':(i['alert.signature'] && i['alert.action']!=='blocked')?'detected':(i.ai_app && i.ai_app!=='unclassified' && i.ai_app!=='-' && i.ai_category!=='nfw_rule')?'ai':'';
+    h+='<tr class="'+rowcls+'">'+C.map(c=>{
+      let v=i[c]; if(v===undefined||v==='')v='-';
+      if(c==='ts'&&v!=='-')v=new Date(v*1000).toISOString().replace('T',' ').substr(0,19);
+      return '<td class="'+(FIVE.has(c)?'t5':AI_COLS.has(c)?'ai-col':cls)+'">'+(''+v).replace(/</g,'&lt;')+'</td>';
+    }).join('')+'</tr>';
+  });
+  document.getElementById('wrap').innerHTML=h+'</table>';
+  document.getElementById('meta').textContent=' '+filtered.length+' shown / '+(d.total||allItems.length)+' total';
+}
+document.getElementById('range').onchange=load;
+document.getElementById('src').onchange=load;
+document.getElementById('flt').onchange=load;
+load();
+</script></body></html>
