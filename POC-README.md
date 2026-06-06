@@ -289,6 +289,52 @@ terraform output ui_url  # CloudFront URL
 
 ## 7. Testing traffic inspection
 
+Connect to VPN, then run:
+```bash
+./nfw-test.sh detect     # generate all traffic types
+./nfw-test.sh status     # check NFW detections (wait 30-60s)
+```
+
+### Blocked traffic (P2P, Tor, QUIC)
+![Blocked Traffic](screenshots/blockedtraffic.png)
+
+### Detected by NFW rules (Slack, Zoom, AI services)
+![NFW Detected](screenshots/nfwdetected.png)
+
+### AI classified (unknown apps identified by Bedrock)
+![AI Classified](screenshots/aiclassified.png)
+
+### Taxonomy Admin (approve/reject AI suggestions)
+![Taxonomy Admin](screenshots/taxonomyadmin.png)
+
+### How `ai_app` is populated
+
+| Source | When | `ai_app` value | `ai_category` |
+|---|---|---|---|
+| NFW Suricata rule match | `alert.signature` exists | Copied from `alert.signature` (e.g., "Zoom", "Slack", "AI:OpenAI") | `nfw_rule` |
+| Bedrock classifier | No rule match, classifier identifies | Set by Sonnet (e.g., "Juniper Mist Edge", "Apple Push Notifications") | Model-assigned (e.g., `vendor_infra`, `os_services`) |
+| Unclassified | Neither matched | `unclassified` | `unknown` |
+
+NFW provides `app_proto` (detected protocol: `http2`, `tls`, `dns`) and `alert.signature` (rule match name).
+When a Suricata rule fires, we copy its signature directly to `ai_app` for a **unified app identity column**
+— no Bedrock call needed. AI only processes connections NFW rules missed.
+
+### Retriggering classification
+
+To reclassify a wrongly cached app:
+```bash
+# Reject the bad classification (removes from cache)
+./taxonomy.sh reject "<app_name>"
+
+# Or reject via admin UI: click ✗ on the item
+
+# Force classifier to re-process (runs automatically every 5 min, or manually):
+AWS_PROFILE=<YOUR_PROFILE> aws lambda invoke --function-name trafinspector-classifier --region us-east-2 /tmp/c.json
+```
+
+After rejection, the destination will be re-sent to Bedrock on the next classifier cycle with
+fresh context (including `tcp-flags` for probe vs real connection detection).
+
 ## 7. How to read results
 
 - **Live UI:** open the CloudFront URL above. Use the **time-range** (5m–30d) and **source** (NFW/FlowLogs)
